@@ -77,6 +77,7 @@ client.unfocused #282a36 #282a36 #bfbfbf #282a36 #282a36\n\
 # 快捷键\n\
 bindsym \$mod+Return exec urxvt\n\
 bindsym \$mod+Shift+q kill\n\
+bindsym \$mod+f fullscreen toggle\n\
 bindsym \$mod+d exec dmenu_run -fn 'Sarasa Mono SC-12' -nb '#282a36' -nf '#f8f8f2' -sb '#bd93f9' -sf '#ffffff'\n\
 # 工作区切换\n\
 bindsym \$mod+1 workspace number 1\n\
