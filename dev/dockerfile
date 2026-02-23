@@ -1,0 +1,125 @@
+FROM debian:bookworm-slim
+
+# ============ 1. 构建参数 ============
+ARG REAL_USER=debian
+ARG USER_PASS=debian
+ARG TZ=Asia/Shanghai
+
+ENV LANG=zh_CN.UTF-8 \
+    LC_ALL=zh_CN.UTF-8 \
+    SHELL=/bin/bash \
+    HOME=/home/${REAL_USER} \
+    DEBIAN_FRONTEND=noninteractive
+
+# ============ 2. 系统配置与字体安装 ============
+# 先切换到 root 安装基础包
+USER root
+
+RUN set -e && \
+    cat <<EOF > /etc/apt/sources.list
+deb https://mirrors.aliyun.com/debian/ bookworm main non-free non-free-firmware contrib
+deb https://mirrors.aliyun.com/debian-security/ bookworm-security main
+deb https://mirrors.aliyun.com/debian/ bookworm-updates main non-free non-free-firmware contrib
+EOF
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        xserver-xorg-core xserver-xorg-input-libinput xinit \
+        ca-certificates curl locales tzdata sudo openssh-server \
+        i3-wm i3status i3lock dmenu rxvt-unicode dbus-x11 xauth x11-xserver-utils \
+        tigervnc-standalone-server tigervnc-common tigervnc-tools \
+        fcitx5 fcitx5-pinyin fcitx5-frontend-qt5 fcitx5-config-qt fcitx5-frontend-gtk3 fonts-noto-cjk \
+        vim procps psmisc fontconfig && \
+    echo "zh_CN.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
+    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    groupadd -g 1000 -f ${REAL_USER} && \
+    id -u ${REAL_USER} >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 -g 1000 ${REAL_USER} && \
+    echo "${REAL_USER}:${USER_PASS}" | chpasswd && \
+    echo "${REAL_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${REAL_USER} && \
+    mkdir -p /var/run/sshd && \
+    sed -i 's/#X11Forwarding no/X11Forwarding yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#X11UseLocalhost yes/X11UseLocalhost no/' /etc/ssh/sshd_config
+
+# 拷贝并安装字体 (需在构建目录准备好 ttf 文件)
+COPY *.ttf /usr/local/share/fonts/sarasa/
+RUN fc-cache -fv
+
+# 清理
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ============ 3. 用户环境美化配置 ============
+USER ${REAL_USER}
+WORKDIR /home/${REAL_USER}
+
+RUN set -e && \
+    mkdir -p ~/.config/i3 ~/.vnc && \
+    # --- 1. .Xresources 美化 (urxvt 配色与字体优化) ---
+    printf "URxvt.locale: zh_CN.UTF-8\n\
+URxvt.scrollBar: false\n\
+URxvt.saveLines: 5000\n\
+URxvt.cursorBlink: true\n\
+URxvt.font: xft:Sarasa Mono SC:size=12:antialias=true\n\
+URxvt.boldFont: xft:Sarasa Mono SC:bold:size=12:antialias=true\n\
+URxvt.letterSpace: -1\n\
+URxvt.background: #282a36\n\
+URxvt.foreground: #f8f8f2\n\
+URxvt.color0: #21222c\n\
+URxvt.color1: #ff5555\n\
+URxvt.color4: #bd93f9\n\
+URxvt.color8: #6272a4\n" > ~/.Xresources && \
+    \
+    # --- 2. i3wm 美化配置 (带颜色、工作区、Alt键) ---
+    printf "set \$mod Mod1\n\
+font pango:Sarasa Mono SC 12\n\
+# 颜色方案 (Dracula Style)\n\
+client.focused #bd93f9 #bd93f9 #f8f8f2 #bd93f9 #bd93f9\n\
+client.unfocused #282a36 #282a36 #bfbfbf #282a36 #282a36\n\
+# 快捷键\n\
+bindsym \$mod+Return exec urxvt\n\
+bindsym \$mod+Shift+q kill\n\
+bindsym \$mod+d exec dmenu_run -fn 'Sarasa Mono SC-12' -nb '#282a36' -nf '#f8f8f2' -sb '#bd93f9' -sf '#ffffff'\n\
+# 工作区切换\n\
+bindsym \$mod+1 workspace number 1\n\
+bindsym \$mod+2 workspace number 2\n\
+bindsym \$mod+3 workspace number 3\n\
+bindsym \$mod+Shift+1 move container to workspace number 1\n\
+# 浮动设置\n\
+floating_modifier \$mod\n\
+bar {\n\
+    status_command i3status\n\
+    colors {\n\
+        background #282a36\n\
+        statusline #f8f8f2\n\
+        focused_workspace #bd93f9 #bd93f9 #ffffff\n\
+        inactive_workspace #282a36 #282a36 #bfbfbf\n\
+    }\n\
+}\n" > ~/.config/i3/config && \
+    \
+    # --- 3. VNC 启动脚本 (加载 Xresources 和 fcitx5) ---
+    printf "#!/bin/sh\n\
+xrdb -merge ~/.Xresources\n\
+export XMODIFIERS=@im=fcitx\n\
+export GTK_IM_MODULE=fcitx\n\
+export QT_IM_MODULE=fcitx\n\
+dbus-launch --exit-with-session fcitx5 -d &\n\
+exec i3\n" > ~/.vnc/xstartup && \
+    chmod +x ~/.vnc/xstartup
+
+# ============ 4. 启动脚本 ============
+USER root
+RUN printf '#!/bin/bash\n\
+set -e\n\
+service ssh start\n\
+if [ "${VNC_MODE}" = "1" ]; then\n\
+    echo "Starting VNC Server..."\n\
+    CUR_USER=$(id -un 1000)\n\
+    sudo -u ${CUR_USER} sh -c "mkdir -p /home/${CUR_USER}/.vnc && echo ${VNC_PASS:-debian} | /usr/bin/vncpasswd -f > /home/${CUR_USER}/.vnc/passwd"\n\
+    sudo -u ${CUR_USER} chmod 600 /home/${CUR_USER}/.vnc/passwd\n\
+    sudo -u ${CUR_USER} /usr/bin/vncserver :1 -geometry 1280x720 -depth 24 -localhost no\n\
+fi\n\
+echo "Services ready. Port 22 & 5901 active."\n\
+tail -f /dev/null\n' > /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 22 5901
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
