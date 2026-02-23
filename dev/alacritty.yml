@@ -1,0 +1,39 @@
+# ~/.config/alacritty/alacritty.yml
+
+window:
+  padding:
+    x: 10
+    y: 10
+  dynamic_title: true
+  opacity: 0.95
+
+font:
+  normal:
+    family: "Sarasa Mono SC"
+    style: Regular
+  bold:
+    family: "Sarasa Mono SC"
+    style: Bold
+  size: 14.0
+
+colors:
+  primary:
+    background: '#282a36'
+    foreground: '#f8f8f2'
+  normal:
+    black:   '#21222c'
+    red:     '#ff5555'
+    green:   '#50fa7b'
+    yellow:  '#f1fa8c'
+    blue:    '#bd93f9'
+    magenta: '#ff79c6'
+    cyan:    '#8be9fd'
+    white:   '#f8f8f2'
+
+selection:
+  save_to_clipboard: true
+
+cursor:
+  style:
+    shape: Beam
+    blinking: Always
